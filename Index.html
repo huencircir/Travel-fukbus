@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FUK x BUS Trip ✈️</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <style>
+        /* 設置海灘配色方案 */
+        :root {
+            --color-primary: #1E90FF; /* 海洋藍 */
+            --color-secondary: #FFD700; /* 沙灘金 */
+            --color-background: #F0F8FF; /* 淺藍白 */
+            --color-card: #FFFFFF;
+        }
+        .bg-beach { background-color: var(--color-background); }
+        .text-primary { color: var(--color-primary); }
+        .bg-primary { background-color: var(--color-primary); }
+        .text-secondary { color: var(--color-secondary); }
+    </style>
+</head>
+<body class="bg-beach min-h-screen">
+
+    <div id="app" class="max-w-md mx-auto shadow-2xl bg-white min-h-screen">
+        
+        <header class="sticky top-0 z-10 p-4 flex justify-between items-center bg-white border-b border-gray-100 shadow-sm">
+            <h1 class="text-2xl font-black text-primary">
+                FUK x BUS <span class="text-gray-400">trip</span>
+            </h1>
+            <div class="text-right">
+                <p class="text-xs text-gray-500">即時匯率</p>
+                <p class="text-sm font-bold text-green-600" v-if="exchangeRate">
+                    JPY: {{ exchangeRate.JPY.toFixed(2) }} | KRW: {{ exchangeRate.KRW.toFixed(2) }}
+                </p>
+                <p v-else class="text-sm text-gray-400">載入中...</p>
+            </div>
+        </header>
+
+        <main class="p-4 pb-20">
+            <component :is="currentTabComponent" 
+                       :schedule-data="scheduleData" 
+                       :map-pins="mapPins"
+                       :expenses-data="expensesData"
+                       :poi-data="poiData"
+                       @add-item="addItem"
+                       @toggle-done="toggleDone"
+                       @add-expense="addExpense"
+                       @add-poi="addPoi">
+            </component>
+        </main>
+
+        <footer class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t border-gray-200 shadow-inner p-2 flex justify-around items-center z-20">
+            <button v-for="tab in tabs" :key="tab.id" 
+                    @click="currentTab = tab.id"
+                    :class="['flex flex-col items-center p-2 rounded-lg transition-colors', 
+                             currentTab === tab.id ? 'text-primary' : 'text-gray-500 hover:text-primary']">
+                <span class="text-xl material-icons">{{ tab.icon }}</span>
+                <span class="text-xs mt-1">{{ tab.label }}</span>
+            </button>
+        </footer>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted } = Vue;
+
+        // --- 1. 行程表組件 (Schedule.js) ---
+        const Schedule = {
+            props: ['scheduleData'],
+            template: `
+                <div>
+                    <h2 class="text-xl font-bold mb-4 text-primary">📝 行程表</h2>
+
+                    <div class="mb-6 card p-4 shadow-md rounded-lg bg-white border-l-4 border-yellow-500">
+                        <h3 class="text-lg font-semibold mb-3 text-gray-700">📋 行前準備</h3>
+                        <div v-for="(item, index) in scheduleData.prepList" :key="index" class="flex items-center mb-2">
+                            <input type="checkbox" :id="'prep-' + index" :checked="item.done" 
+                                   @change="$emit('toggle-done', 'prepList', index)" 
+                                   class="mr-3 h-5 w-5 text-green-500 rounded border-gray-300 focus:ring-green-500">
+                            <label :for="'prep-' + index" :class="{'line-through text-gray-500': item.done, 'text-gray-800': !item.done}">
+                                {{ item.text }}
+                            </label>
+                        </div>
+                        <input type="text" v-model="newPrepItem" @keyup.enter="addItemHandler('prepList')" 
+                               placeholder="+ 新增準備事項..."
+                               class="mt-3 w-full border-b border-gray-300 focus:border-primary outline-none p-1 text-sm"/>
+                    </div>
+
+                    <div v-for="(day, key) in scheduleData.daily" :key="key" class="mb-6">
+                        <h3 class="text-lg font-bold mb-2 p-2 bg-primary text-white rounded-t-lg">{{ day.title }}</h3>
+                        
+                        <div class="p-3 bg-blue-100 rounded-b-lg mb-3 flex justify-between items-center text-sm text-gray-700">
+                             ☀️ {{ day.weather || '載入天氣中...' }}
+                             <span class="text-xs text-blue-600">（目前為模擬資料）</span>
+                        </div>
+
+                        <div v-for="(item, i) in day.events" :key="i" class="card p-3 mb-2 rounded-lg bg-white shadow-sm border-l-2 border-primary">
+                            <p class="text-sm text-gray-500 font-medium">{{ item.time }}</p>
+                            <p class="font-semibold text-gray-800">{{ item.name }}</p>
+                            <div class="flex items-center justify-between text-xs mt-1">
+                                <p class="text-gray-600 truncate">{{ item.address }}</p>
+                                <a :href="getMapsLink(item.address)" target="_blank" class="text-primary hover:underline ml-2 flex-shrink-0">
+                                    <span class="material-icons text-base align-middle mr-1">directions</span>導航
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="mt-3 p-3 bg-gray-50 rounded-lg">
+                            <input type="text" v-model="newEventTime[key]" placeholder="時間 (例: 10:00)" class="w-full text-sm border-b mb-2 p-1"/>
+                            <input type="text" v-model="newAddress[key]" placeholder="行程/地址" class="w-full text-sm border-b mb-2 p-1"/>
+                            <button @click="addItemHandler('daily', key)" class="w-full bg-green-500 text-white p-2 rounded-lg text-sm mt-2">
+                                + 新增當天行程
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `,
+            data() {
+                return {
+                    newPrepItem: '',
+                    newEventTime: {},
+                    newAddress: {}
+                };
+            },
+            methods: {
+                addItemHandler(type, dayKey = null) {
+                    if (type === 'prepList' && this.newPrepItem.trim()) {
+                        this.$emit('add-item', 'prepList', { text: this.newPrepItem.trim(), done: false });
+                        this.newPrepItem = '';
+                    } else if (type === 'daily' && this.newAddress[dayKey] && this.newEventTime[dayKey]) {
+                        this.$emit('add-item', 'daily', { 
+                            day: dayKey, 
+                            event: { 
+                                time: this.newEventTime[dayKey].trim(), 
+                                name: this.newAddress[dayKey].trim(), 
+                                address: this.newAddress[dayKey].trim() 
+                            }
+                        });
+                        this.newEventTime[dayKey] = '';
+                        this.newAddress[dayKey] = '';
+                    }
+                },
+                getMapsLink(address) {
+                    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+                }
+            },
+            mounted() {
+                // 初始化每日行程的新增輸入
+                Object.keys(this.scheduleData.daily).forEach(key => {
+                    this.newEventTime[key] = '';
+                    this.newAddress[key] = '';
+                });
+            }
+        };
+        
+        // --- 2. 地圖組件 (Map.js) ---
+        const MapComponent = {
+            props: ['mapPins'],
+            template: `
+                <div>
+                    <h2 class="text-xl font-bold mb-4 text-primary">📍 地圖</h2>
+                    <div class="w-full h-64 bg-gray-200 rounded-lg flex items-center justify-center mb-4 text-gray-500">
+                        
+                        <p>（地圖模擬顯示）</p>
+                    </div>
+                    
+                    <h3 class="text-lg font-semibold mb-3 text-gray-700">📌 已標記地點</h3>
+                    <div v-for="(pin, index) in mapPins" :key="index" class="card p-3 mb-2 rounded-lg bg-white shadow-sm flex justify-between items-center border-l-2 border-green-500">
+                        <div>
+                            <p class="font-semibold text-gray-800">{{ pin.name }}</p>
+                            <p class="text-sm text-gray-600">{{ pin.address }}</p>
+                        </div>
+                        <a :href="getMapsLink(pin.address)" target="_blank" class="text-green-500 text-sm hover:underline">導航</a>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-gray-50 rounded-lg">
+                        <input type="text" v-model="newPinName" placeholder="標記名稱 (例如: 福岡機場)" class="w-full text-sm border-b mb-2 p-1"/>
+                        <input type="text" v-model="newPinAddress" placeholder="地址" class="w-full text-sm border-b mb-2 p-1"/>
+                        <button @click="addPinHandler" class="w-full bg-primary text-white p-2 rounded-lg text-sm mt-2">
+                            + 新增地圖標記
+                        </button>
+                    </div>
+                </div>
+            `,
+            data() {
+                return {
+                    newPinName: '',
+                    newPinAddress: ''
+                };
+            },
+            methods: {
+                addPinHandler() {
+                    if (this.newPinName.trim() && this.newPinAddress.trim()) {
+                        // 此處需要透過事件發送給 App 實例來更新 mapPins
+                        this.$emit('add-item', 'mapPins', { name: this.newPinName.trim(), address: this.newPinAddress.trim() });
+                        this.newPinName = '';
+                        this.newPinAddress = '';
+                    }
+                },
+                getMapsLink(address) {
+                    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+                }
+            }
+        };
+
+        // --- 3. 記帳組件 (Accounting.js) ---
+        const Accounting = {
+            props: ['expensesData'],
+            template: `
+                <div>
+                    <h2 class="text-xl font-bold mb-4 text-primary">💰 記帳</h2>
+
+                    <div class="card p-4 mb-4 rounded-lg bg-primary text-white text-center shadow-lg">
+                        <p class="text-sm opacity-80">總支出 (HKD)</p>
+                        <p class="text-3xl font-black">HK$ {{ totalExpenseHKD.toFixed(2) }}</p>
+                    </div>
+
+                    <div class="card p-4 mb-6 rounded-lg bg-white shadow-md border-t-4 border-primary">
+                        <h3 class="text-lg font-semibold mb-3 text-gray-700">📝 新增支出</h3>
+                        
+                        <input type="number" v-model.number="newExpense.amount" placeholder="支付金額" 
+                               class="w-full text-lg border-b mb-3 p-1 focus:border-primary outline-none" min="0"/>
+                        
+                        <select v-model="newExpense.currency" class="w-full p-2 mb-3 border rounded-md bg-gray-50">
+                            <option value="HKD">港幣 (HKD)</option>
+                            <option value="JPY">日圓 (JPY)</option>
+                            <option value="KRW">韓圜 (KRW)</option>
+                        </select>
+
+                        <select v-model="newExpense.type" class="w-full p-2 mb-3 border rounded-md bg-gray-50">
+                            <option value="Cash">現金 (Cash)</option>
+                            <option value="Credit Card">信用卡 (Credit Card)</option>
+                        </select>
+
+                        <input type="text" v-model="newExpense.description" placeholder="支出描述 (例: 晚餐)" 
+                               class="w-full text-sm border-b mb-3 p-1 focus:border-primary outline-none"/>
+
+                        <button @click="addExpenseHandler" class="w-full bg-green-500 text-white p-2 rounded-lg text-sm mt-2">
+                            + 記錄支出
+                        </button>
+                    </div>
+
+                    <h3 class="text-lg font-semibold mb-3 text-gray-700">📊 支出記錄</h3>
+                    <div v-for="(expense, index) in expensesData.list" :key="index" class="card p-3 mb-2 rounded-lg bg-white shadow-sm flex justify-between items-center border-l-2" :class="expense.type === 'Cash' ? 'border-red-400' : 'border-blue-400'">
+                        <div>
+                            <p class="font-semibold text-gray-800">{{ expense.description }}</p>
+                            <p class="text-xs text-gray-500">{{ expense.type }} - {{ expense.currency }}</p>
+                        </div>
+                        <p class="text-lg font-bold text-red-600">- {{ expense.amount.toFixed(0) }}</p>
+                    </div>
+                </div>
+            `,
+            data() {
+                return {
+                    newExpense: {
+                        amount: null,
+                        currency: 'HKD',
+                        type: 'Cash',
+                        description: ''
+                    },
+                    exchange: {
+                        JPY: 0.052, // 模擬匯率
+                        KRW: 0.006,
+                        HKD: 1.0
+                    }
+                };
+            },
+            computed: {
+                totalExpenseHKD() {
+                    return this.expensesData.list.reduce((sum, expense) => {
+                        let amountHKD = expense.amount * (this.exchange[expense.currency] || 1);
+                        return sum + amountHKD;
+                    }, 0);
+                }
+            },
+            methods: {
+                addExpenseHandler() {
+                    if (this.newExpense.amount && this.newExpense.description.trim()) {
+                        this.$emit('add-expense', { ...this.newExpense });
+                        // 重置表單
+                        this.newExpense.amount = null;
+                        this.newExpense.description = '';
+                    }
+                }
+            }
+        };
+
+        // --- 4. 美食/購物組件 (POI.js) ---
+        const POI = {
+            props: ['poiData'],
+            template: `
+                <div>
+                    <h2 class="text-xl font-bold mb-4 text-primary">🛍️ 美食 / 購物</h2>
+
+                    <div class="card p-4 mb-6 rounded-lg bg-white shadow-md border-t-4 border-primary">
+                        <h3 class="text-lg font-semibold mb-3 text-gray-700">✍️ 新增項目</h3>
+                        <input type="text" v-model="newPoi.name" placeholder="名稱 (例: 一蘭拉麵)" class="w-full text-sm border-b mb-2 p-1"/>
+                        <input type="text" v-model="newPoi.price" placeholder="預計價錢 (HKD)" class="w-full text-sm border-b mb-2 p-1"/>
+                        <input type="url" v-model="newPoi.url" placeholder="網址 (可選)" class="w-full text-sm border-b mb-2 p-1"/>
+                        <input type="text" v-model="newPoi.image" placeholder="圖片網址 (可選)" class="w-full text-sm border-b mb-2 p-1"/>
+                        <button @click="addPoiHandler" class="w-full bg-green-500 text-white p-2 rounded-lg text-sm mt-2">
+                            + 加入清單
+                        </button>
+                    </div>
+
+                    <div v-for="(item, index) in poiData.list" :key="index" class="card p-3 mb-3 rounded-lg bg-white shadow-lg flex items-center border-l-4" :class="item.done ? 'border-green-500' : 'border-gray-300'">
+                        
+                        <button @click="$emit('toggle-done', 'poiList', index)" class="mr-3 flex-shrink-0">
+                            <span class="material-icons text-3xl" :class="item.done ? 'text-green-500' : 'text-gray-300'">
+                                {{ item.done ? 'check_circle' : 'circle_outline' }}
+                            </span>
+                        </button>
+
+                        <div class="flex-grow min-w-0">
+                            <p class="font-bold truncate" :class="{'line-through text-gray-500': item.done}">{{ item.name }}</p>
+                            <p class="text-sm text-gray-600">約 HK${{ item.price }}</p>
+                            <a v-if="item.url" :href="item.url" target="_blank" class="text-xs text-primary hover:underline truncate block">查看網址</a>
+                        </div>
+                        
+                        <div v-if="item.image" class="w-12 h-12 ml-3 rounded-md overflow-hidden flex-shrink-0">
+                            <img :src="item.image" alt="POI Image" class="w-full h-full object-cover">
+                        </div>
+                    </div>
+                </div>
+            `,
+            data() {
+                return {
+                    newPoi: {
+                        name: '',
+                        price: '',
+                        url: '',
+                        image: ''
+                    }
+                };
+            },
+            methods: {
+                addPoiHandler() {
+                    if (this.newPoi.name.trim()) {
+                        this.$emit('add-poi', { 
+                            name: this.newPoi.name.trim(),
+                            price: parseFloat(this.newPoi.price) || 0,
+                            url: this.newPoi.url.trim(),
+                            image: this.newPoi.image.trim(),
+                            done: false
+                        });
+                        // 重置表單
+                        this.newPoi = { name: '', price: '', url: '', image: '' };
+                    }
+                }
+            }
+        };
+
+        // --- 5. 資訊組件 (Info.js) ---
+        const Info = {
+            template: `
+                <div>
+                    <h2 class="text-xl font-bold mb-4 text-primary">ℹ️ 資訊</h2>
+
+                    <div class="mb-6 card p-4 rounded-lg bg-white shadow-md border-t-4 border-yellow-500">
+                        <h3 class="text-lg font-semibold mb-3 text-gray-700">🏨 酒店資料</h3>
+                        <p class="font-bold">福岡：</p>
+                        <p class="text-sm text-gray-600">地址：福岡市博多區XXX / 預約號：FUK123</p>
+                        <hr class="my-2">
+                        <p class="font-bold">釜山：</p>
+                        <p class="text-sm text-gray-600">地址：釜山廣域市海雲台區YYY / 預約號：BUS456</p>
+                    </div>
+
+                    <div class="mb-6 card p-4 rounded-lg bg-white shadow-md border-t-4 border-blue-500">
+                        <h3 class="text-lg font-semibold mb-3 text-gray-700">🚇 交通訊息</h3>
+                        <p class="font-bold mb-1">福岡地鐵圖：</p>
+                        <div class="text-center mb-3">
+                           
+
+[Image of Fukuoka Subway Map]
+
+                        </div>
+                        <p class="font-bold mb-1">釜山地鐵圖：</p>
+                        <div class="text-center">
+                           
+
+[Image of Busan Subway Map]
+
+                        </div>
+                    </div>
+                    
+                    <p class="text-xs text-center text-gray-400 mt-4">請以實際官方資訊為準。</p>
+                </div>
+            `
+        };
+
+
+        // --- Vue 根實例 ---
+        const App = {
+            setup() {
+                const currentTab = ref('schedule');
+                const exchangeRate = ref(null); // 即時匯率數據
+
+                const tabs = [
+                    { id: 'schedule', label: '行程表', icon: 'event' },
+                    { id: 'map', label: '地圖', icon: 'map' },
+                    { id: 'accounting', label: '記帳', icon: 'paid' },
+                    { id: 'poi', label: '美食/購物', icon: 'shopping_bag' },
+                    { id: 'info', label: '資訊', icon: 'info' }
+                ];
+
+                const scheduleData = ref({
+                    prepList: [
+                        { text: '確認護照效期', done: true },
+                        { text: '兌換日圓和韓圜', done: false },
+                        { text: '購買旅遊保險', done: false }
+                    ],
+                    daily: {
+                        day04: { title: 'DAY 1 - 4號 (福岡)', weather: '晴朗 25°C', events: [
+                            { time: '10:00', name: '香港機場出發', address: 'HKG' },
+                            { time: '14:00', name: '抵達福岡機場', address: 'Fukuoka Airport' },
+                        ]},
+                        day05: { title: 'DAY 2 - 5號 (福岡)', weather: '多雲 20°C', events: [
+                            { time: '11:00', name: '博多運河城', address: 'Canal City Hakata' },
+                        ]},
+                        day12: { title: 'DAY 9 - 12號 (釜山)', weather: '小雨 18°C', events: [
+                            { time: '15:00', name: '釜山機場出發', address: 'Gimhae International Airport' },
+                        ]},
+                    }
+                });
+
+                const mapPins = ref([
+                    { name: '福岡酒店', address: '福岡市博多區XXX' },
+                    { name: '釜山酒店', address: '釜山廣域市海雲台區YYY' },
+                ]);
+
+                const expensesData = ref({
+                    list: [
+                        { amount: 500, currency: 'HKD', type: 'Credit Card', description: '機票' },
+                        { amount: 3500, currency: 'JPY', type: 'Cash', description: '福岡晚餐' },
+                    ]
+                });
+
+                const poiData = ref({
+                    list: [
+                        { name: '一蘭拉麵', price: 80, url: 'https://ichiran.com/', image: 'https://example.com/ramen.jpg', done: false },
+                        { name: 'PUMA 波鞋 (釜山)', price: 600, url: '', image: '', done: true },
+                    ]
+                });
+
+
+                const currentTabComponent = computed(() => {
+                    switch (currentTab.value) {
+                        case 'schedule': return Schedule;
+                        case 'map': return MapComponent;
+                        case 'accounting': return Accounting;
+                        case 'poi': return POI;
+                        case 'info': return Info;
+                        default: return Schedule;
+                    }
+                });
+                
+                // --- 方法 (Methods) ---
+
+                // 處理行前準備 / 美食購物 清單項目
+                const toggleDone = (type, index) => {
+                    if (type === 'prepList') {
+                        scheduleData.value.prepList[index].done = !scheduleData.value.prepList[index].done;
+                    } else if (type === 'poiList') {
+                        poiData.value.list[index].done = !poiData.value.list[index].done;
+                    }
+                };
+
+                // 處理新增行程 / 地圖釘
+                const addItem = (type, payload) => {
+                    if (type === 'prepList') {
+                        scheduleData.value.prepList.push(payload);
+                    } else if (type === 'daily') {
+                        scheduleData.value.daily[payload.day].events.push(payload.event);
+                    } else if (type === 'mapPins') {
+                        mapPins.value.push(payload);
+                    }
+                };
+
+                // 處理新增支出
+                const addExpense = (expense) => {
+                    expensesData.value.list.push(expense);
+                };
+
+                // 處理新增 POI
+                const addPoi = (poi) => {
+                    poiData.value.list.push(poi);
+                };
+
+                // 模擬獲取匯率
+                const fetchExchangeRate = async () => {
+                    // 實際應用中請使用可靠的 API
+                    // 這裡使用隨機模擬值
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    exchangeRate.value = {
+                        JPY: 0.052 + Math.random() * 0.005 - 0.0025,
+                        KRW: 0.006 + Math.random() * 0.0005 - 0.00025,
+                        HKD: 1
+                    };
+                };
+
+                // 組件掛載後執行
+                onMounted(() => {
+                    fetchExchangeRate();
+                });
+
+                return {
+                    currentTab,
+                    tabs,
+                    exchangeRate,
+                    currentTabComponent,
+                    scheduleData,
+                    mapPins,
+                    expensesData,
+                    poiData,
+                    toggleDone,
+                    addItem,
+                    addExpense,
+                    addPoi
+                };
+            },
+            components: {
+                Schedule,
+                MapComponent,
+                Accounting,
+                POI,
+                Info
+            }
+        };
+
+        createApp(App).mount('#app');
+    </script>
+    
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</body>
+</html>
