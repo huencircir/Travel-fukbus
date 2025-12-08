@@ -24,20 +24,18 @@
                         sans: ['Noto Sans TC', 'sans-serif'],
                     },
                     boxShadow: {
-                        // Updated shadows for deeper effect
                         'soft': '0 10px 40px -10px rgba(0,0,0,0.08)',
                         'lg': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
-                        'float': '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08)' // Closer to shadow-xl
+                        'float': '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.08)' 
                     }
                 }
             }
         }
     </script>
     <style>
-        /* FIX: App背景圖片 - 使用用戶提供的 Google Photos 連結 */
-        /* 注意：Google Photos 連結作為 CSS 背景圖可能會有跨域問題，建議替換為圖床的直接圖片連結。 */
+        /* FIX: App背景圖片 - 使用新提供的圖片 URL */
         body { 
-            background-image: url('https://pixhost.to/show/10739/669549294_img_0139.jpg'); 
+            background-image: url('https://t1.pixhost.to/thumbs/10739/669549294_img_0139.jpg'); 
             background-size: cover;
             background-attachment: fixed;
             background-position: center;
@@ -57,7 +55,7 @@
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
-        /* FIX: 統一卡片圓角為 rounded-3xl (2rem = 32px) 並加強陰影 */
+        /* 統一卡片圓角為 rounded-3xl (2rem = 32px) 並加強陰影 */
         .glass-card {
             background: rgba(255, 255, 255, 0.9);
             box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.1); /* shadow-lg */
@@ -463,7 +461,6 @@
             ];
 
             const rates = ref({ JPY: '0.052', KRW: '0.0058' });
-            // 地圖初始連結，使用一個廣域查詢
             const mapEmbedSrc = ref('https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d209121.78508103348!2d130.26442436034098!3d33.64964177218671!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x354191c7e6f9b3e5%3A0x1c48011116c2763!2sFukuoka%2C%20Fukuoka%20Prefecture%2C%20Japan!5e0!3m2!1sen!2stw!4v1700000000000!5m2!1sen!2stw');
 
             const inputs = ref({
@@ -473,7 +470,6 @@
                 shopName: '', shopPrice: '', shopCat: 'food', shopNote: ''
             });
 
-            // 數據：更新釜山酒店名稱和地址
             const data = ref({
                 prepList: [
                     { text: '確認護照效期', done: true, note: '' },
@@ -488,23 +484,19 @@
                     { date: '6', events: [] },
                     { date: '7', events: [] },
                     { date: '8', events: [
-                        // FIX: Day 5 飛行卡片顯示問題，確保數據格式正確
                         { time: '09:25', title: '✈️ BX 147 FUK → PUS', address: '福岡機場', note: '10:25 抵達' },
-                        // FIX: 更新釜山酒店名稱
                         { time: '15:00', title: '🏨 Check-in', address: 'UH suite 유에이치스위트 더 해운대', note: '釜山海雲台' }
                     ]},
                     { date: '9', events: [] },
                     { date: '10', events: [] },
                     { date: '11', events: [] },
                     { date: '12', events: [
-                        // FIX: 更新釜山酒店名稱
                         { time: '11:00', title: '🏨 Check-out', address: 'UH suite 유에이치스위트 더 해운대', note: '' }, 
                         { time: '14:05', title: '✈️ UO675 PUS → HKG', address: '釜山金海機場', note: '16:50 抵達' }
                     ]}
                 ]
             });
 
-            // 記帳與購物數據
             const expenses = ref([
                 { amount: 3000, currency: 'HKD', type: '交通', method: 'Card', note: '機票 (UO)' },
                 { amount: 500, currency: 'HKD', type: '住宿', method: 'Card', note: '住宿預付' },
@@ -512,7 +504,6 @@
                 { amount: 50000, currency: 'KRW', type: '購物', method: 'Card', note: 'Olive Young' }
             ]);
             
-            // FIX: 購物清單 filter 響應式
             const shopFilter = ref('all');
             const shoppingList = ref([
                 { name: '博多明太子', price: '¥1500', category: 'food', note: '', done: false },
@@ -522,18 +513,14 @@
 
             // ============ Computed & Logic ============
 
-            // FIX: 修正飛行卡片資訊提取邏輯，以支援 BX 147 這種含空格的航班號
             const getFlightDetail = (title) => {
-                // Regex to capture: (Flight Code/Number), (Departure Code), (Arrival Code)
-                // The flight number group captures 2 to 8 characters/spaces, e.g., "UO600" or "BX 147"
                 const match = title.match(/([\w\s]{2,8})\s*(\w{3})\s*→\s*(\w{3})/); 
                 
                 if (!match) return { flightNum: 'N/A', depCode: 'TBA', arrCode: 'TBA', depTime: 'TBA', arrTime: 'TBA' };
 
                 const [fullMatch, flightNum, depCode, arrCode] = match;
                 
-                // Get time details from the currently active day's events
-                const currentEvent = data.value.days[activeDay.value].events.find(e => e.title === title);
+                const currentEvent = data.value.days[activeDay.value]?.events.find(e => e.title === title);
                 
                 const depTime = currentEvent ? currentEvent.time : 'TBA';
                 const note = currentEvent ? currentEvent.note : '';
@@ -552,15 +539,11 @@
 
             const allLocations = computed(() => {
                 const locs = [];
-                // 固定的酒店
                 locs.push({ title: '福岡酒店', address: 'Richmond Hotel Fukuoka Tenjin', dayNum: '1-4', city: '福岡' });
-                // FIX: 更新釜山酒店名稱
                 locs.push({ title: '釜山酒店', address: 'UH suite 유에이치스위트 더 해운대', dayNum: '5-9', city: '釜山' }); 
 
-                // 從每日行程提取 (omitted non-critical logic for brevity)
                 data.value.days.forEach((day, idx) => {
                     day.events.forEach(ev => {
-                        // 忽略酒店地址和機場代碼作為獨立 pin
                         if (ev.address && ev.address.length > 3 && !['HKG','FUK','PUS','UH suite 유에이치스위트 더 해운대'].includes(ev.address) && !locs.some(l => l.address === ev.address)) {
                             locs.push({
                                 title: ev.title.replace('✈️', '').trim(),
@@ -610,7 +593,6 @@
             
             let chartInstance = null;
             
-            // FIX: 圓形分佈圖顯示邏輯
             const renderChart = () => {
                 if(chartInstance) chartInstance.destroy();
 
@@ -647,7 +629,7 @@
                         cutout: '70%',
                         plugins: {
                             legend: {
-                                display: false, // Hide default legend
+                                display: false,
                             },
                             tooltip: {
                                 callbacks: {
@@ -665,11 +647,9 @@
                 });
             };
 
-            // FIX: 圓餅圖在 tab 切換時重新渲染
             watch(currentTab, async (newVal) => { if(newVal === 'accounting') { await nextTick(); renderChart(); } });
             
             // Shopping List Logic
-            // FIX: 修正購物清單篩選邏輯
             const filteredShopList = computed(() => {
                 if (shopFilter.value === 'all') {
                     return shoppingList.value;
