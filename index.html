@@ -47,7 +47,7 @@
             margin: 0 auto; 
             min-height: 100vh; 
             position: relative; 
-            background: rgba(255, 255, 255, 0.9); /* 內容區域略微透明 */
+            background: rgba(255, 255, 255, 0.5); /* 內容區域略微透明 */
             overflow: hidden; 
         }
 
@@ -82,9 +82,7 @@
               left: 0;
               width: 100%;
               height: 100%;
-              background-image: url('busan.jpg');
-              background-position: center;
-              opacity: 0.5; /* Transparency for the background image */
+              background: url('busan.jpg') no-repeat center center / cover;
               z-index: -1; /* Places the pseudo-element behind the content */
             }
     </style>
@@ -117,7 +115,7 @@
                 <div class="flex overflow-x-auto px-4 gap-3 hide-scrollbar snap-x">
                     <button @click="selectDay('prep')" 
                             class="snap-center flex-shrink-0 px-5 py-3 rounded-2xl transition-all duration-300 flex flex-col items-center justify-center min-w-[80px]"
-                            :class="activeDay === 'prep' ? 'bg-deep-600 text-white shadow-lg scale-105' : 'bg-white text-gray-400 shadow-lg'">
+                            :class="activeDay === 'prep' ? 'bg-deep-600 text-white shadow-lg' : 'bg-white text-gray-400 shadow-lg'">
                         <span class="material-icons text-lg mb-1">backpack</span>
                         <span class="text-xs font-bold">準備</span>
                     </button>
@@ -125,7 +123,7 @@
                     <button v-for="(day, index) in data.days" :key="index" 
                             @click="selectDay(index)"
                             class="snap-center flex-shrink-0 px-4 py-2 rounded-2xl transition-all duration-300 flex flex-col items-center justify-center min-w-[70px]"
-                            :class="activeDay === index ? 'bg-deep-600 text-white shadow-lg scale-105' : 'bg-white text-gray-400 shadow-lg'">
+                            :class="activeDay === index ? 'bg-deep-600 text-white shadow-lg' : 'bg-white text-gray-400 shadow-lg'">
                         <span class="text-[10px] uppercase opacity-80">Jan</span>
                         <span class="text-lg font-black leading-none my-0.5">{{ day.date }}</span>
                         <span class="text-[10px] font-bold">D{{ index + 1 }}</span>
