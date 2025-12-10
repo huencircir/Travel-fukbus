@@ -460,51 +460,142 @@
     </nav>
 
 </div>
-<script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-analytics.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
+<script>
+    const { createApp, ref, computed, watch, onMounted, nextTick } = Vue;
 
-  // Your web app's Firebase configuration
-  // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyBxlyY9NLtDjf2xkMsv8eSxrzao9c1guFM",
-    authDomain: "fuk-bus-trip.firebaseapp.com",
-    projectId: "fuk-bus-trip",
-    storageBucket: "fuk-bus-trip.firebasestorage.app",
-    messagingSenderId: "128304406754",
-    appId: "1:128304406754:web:11485af4aaf1ade6997ebb",
-    measurementId: "G-LV7DQH9L4N"
-  };
+    // Firebase Config (已帶入你的資料)
+    const firebaseConfig = {
+        apiKey: "AIzaSyBxlyY9NLtDjf2xkMsv8eSxrzao9c1guFM",
+        authDomain: "fuk-bus-trip.firebaseapp.com",
+        projectId: "fuk-bus-trip",
+        databaseURL: "https://fuk-bus-trip-default-rtdb.firebaseio.com", // 這裡是補上的
+        storageBucket: "fuk-bus-trip.firebasestorage.app",
+        messagingSenderId: "128304406754",
+        appId: "1:128304406754:web:11485af4aaf1ade6997ebb"
+    };
 
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-  const analytics = getAnalytics(app);
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
 
-    // --- 修改 Vue Setup ---
-setup() {
-    // 讀取資料：從 Firebase 抓取
-    const dataRef = db.ref('trip_data');
-    dataRef.on('value', (snapshot) => {
-        const val = snapshot.val();
-        if (val) {
-            data.value = val.data;
-            expenses.value = val.expenses;
-            shoppingList.value = val.shoppingList;
+    createApp({
+        setup() {
+            const currentTab = ref('itinerary');
+            const activeDay = ref(0);
+            const loading = ref(true);
+            const rates = { JPY: '0.052', KRW: '0.0058' };
+
+            // 核心響應式資料
+            const trip_prepList = ref([]);
+            const trip_days = ref(Array.from({length: 9}, (_, i) => ({ date: 4+i, events: [] })));
+            const trip_expenses = ref([]);
+            const trip_shoppingList = ref([]);
+
+            // UI 狀態
+            const newPrep = ref('');
+            const newExp = ref({ amount: null, currency: 'HKD', note: '', type: '食' });
+
+            // 1. 雲端同步：從 Firebase 讀取
+            onMounted(() => {
+                db.ref('fuk_bus_data').on('value', (snapshot) => {
+                    const val = snapshot.val();
+                    if (val) {
+                        trip_prepList.value = val.prepList || [];
+                        trip_days.value = val.days || [];
+                        trip_expenses.value = val.expenses || [];
+                        trip_shoppingList.value = val.shoppingList || [];
+                    }
+                    loading.value = false;
+                });
+            });
+
+            // 2. 雲端同步：手動觸發保存 (當修改資料時)
+            const saveToFirebase = () => {
+                db.ref('fuk_bus_data').set({
+                    prepList: trip_prepList.value,
+                    days: trip_days.value,
+                    expenses: trip_expenses.value,
+                    shoppingList: trip_shoppingList.value
+                });
+            };
+
+            // 行程邏輯
+            const addPrep = () => {
+                if(newPrep.value) {
+                    trip_prepList.value.push({ text: newPrep.value, done: false });
+                    newPrep.value = ''; saveToFirebase();
+                }
+            };
+
+            const parseFlight = (t) => {
+                const m = t.match(/([\w\s]+)\s(\w{3})\s→\s(\w{3})/);
+                return m ? { num: m[1], dep: m[2], arr: m[3] } : { num: 'UO600', dep: 'HKG', arr: 'FUK' };
+            };
+
+            const openAddEvent = () => {
+                const title = prompt("標題 (例: ✈️ BX 147 FUK → PUS 或 晚餐)");
+                if(title) {
+                    const time = prompt("時間 (12:00)", "12:00");
+                    const addr = prompt("地址");
+                    trip_days.value[activeDay.value].events.push({ time, title, address: addr });
+                    saveToFirebase();
+                }
+            };
+
+            const deleteEvent = (d, e) => {
+                if(confirm('刪？')){ trip_days.value[d].events.splice(e,1); saveToFirebase(); }
+            };
+
+            // 記帳邏輯
+            const addExpense = () => {
+                if(newExp.value.amount) {
+                    trip_expenses.value.push({...newExp.value});
+                    newExp.value.amount = null; newExp.value.note = ''; saveToFirebase();
+                }
+            };
+
+            const totalExpenseHKD = computed(() => {
+                return trip_expenses.value.reduce((sum, item) => {
+                    let rate = 1;
+                    if(item.currency === 'JPY') rate = 0.052;
+                    if(item.currency === 'KRW') rate = 0.0058;
+                    return sum + (item.amount * rate);
+                }, 0).toFixed(0);
+            });
+
+            // 圖表渲染
+            let chart = null;
+            const renderChart = () => {
+                const ctx = document.getElementById('expenseChart');
+                if(!ctx) return;
+                if(chart) chart.destroy();
+                chart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        datasets: [{ 
+                            data: trip_expenses.value.map(e => e.amount), 
+                            backgroundColor: ['#0EA5E9', '#F59E0B', '#EF4444', '#10B981'] 
+                        }]
+                    },
+                    options: { cutout: '70%', plugins: { legend: { display: false } } }
+                });
+            };
+
+            watch(currentTab, (val) => { if(val==='accounting') nextTick(renderChart); });
+
+            return {
+                currentTab, activeDay, loading, rates, trip_days, trip_prepList, trip_expenses,
+                navTabs: [
+                    {id:'itinerary', icon:'calendar_month', label:'行程'},
+                    {id:'accounting', icon:'pie_chart', label:'記帳'},
+                    {id:'info', icon:'info', label:'資訊'}
+                ],
+                newPrep, newExp, addPrep, saveToFirebase, parseFlight, openAddEvent, deleteEvent,
+                totalExpenseHKD, addExpense, getExpIcon: (t) => 'restaurant_menu',
+                deleteExpense: (i) => { trip_expenses.value.splice(i,1); saveToFirebase(); },
+                deleteItem: (type, i) => { trip_prepList.value.splice(i,1); saveToFirebase(); }
+            }
         }
-    });
-
-    // 儲存資料：當資料變動時，推送到 Firebase
-    watch([data, expenses, shoppingList], () => {
-        db.ref('trip_data').set({
-            data: data.value,
-            expenses: expenses.value,
-            shoppingList: shoppingList.value
-        });
-    }, { deep: true });
-}
+    }).mount('#app');
 </script>
     
 </rbody>
