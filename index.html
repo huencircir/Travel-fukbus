@@ -9,8 +9,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -36,7 +36,6 @@
     <style>
         /* FIX: App背景圖片 - 使用高對比度的原始圖片 URL */
         body { 
-            background-image: url('https://i.pixhost.to/images/10739/669549294_img_0139.jpg'); /* 替換為原始大圖 URL */
             background-size: cover;
             background-attachment: fixed;
             background-position: center;
@@ -450,7 +449,7 @@
     </main>
 
     <nav class="fixed bottom-6 left-6 right-6 bg-white/80 backdrop-blur-md rounded-full flex justify-between items-center px-2 py-3 shadow-float z-50">
-        <button v-for="tab in tabs" :key="tab.id" @click="currentTab = tab.id" 
+        <button v-for="tab in navTabs" :key="tab.id" @click="currentTab = tab.id" 
                 class="flex flex-col items-center w-1/5 transition-all duration-300 group"
                 :class="currentTab === tab.id ? 'text-deep-600 -translate-y-1' : 'text-gray-400 hover:text-sky-400'">
             <span class="material-icons mb-0.5 text-[24px] group-active:scale-90 transition-transform">{{ tab.icon }}</span>
@@ -490,6 +489,32 @@
             const trip_expenses = ref([]);
             const trip_shoppingList = ref([]);
 
+            // Bridge for template bindings expecting `data.*` and `inputs.*`
+            const data = computed(() => ({
+                prepList: trip_prepList.value,
+                days: trip_days.value,
+                expenses: trip_expenses.value,
+                shoppingList: trip_shoppingList.value
+            }));
+
+            const inputs = ref({
+                prepText: '',
+                prepNote: '',
+                eventTime: '',
+                eventTitle: '',
+                eventAddr: '',
+                eventNote: '',
+                expAmount: null,
+                expCurrency: 'HKD',
+                expType: '食',
+                expMethod: 'Cash',
+                expNote: '',
+                shopName: '',
+                shopPrice: '',
+                shopCat: 'food',
+                shopNote: ''
+            });
+
             // UI 狀態
             const newPrep = ref('');
             const newExp = ref({ amount: null, currency: 'HKD', note: '', type: '食' });
@@ -520,9 +545,12 @@
 
             // 行程邏輯
             const addPrep = () => {
-                if(newPrep.value) {
-                    trip_prepList.value.push({ text: newPrep.value, done: false });
-                    newPrep.value = ''; saveToFirebase();
+                const text = inputs.value.prepText?.trim();
+                if(text) {
+                    trip_prepList.value.push({ text, note: inputs.value.prepNote || '', done: false });
+                    inputs.value.prepText = '';
+                    inputs.value.prepNote = '';
+                    saveToFirebase();
                 }
             };
 
@@ -531,14 +559,20 @@
                 return m ? { num: m[1], dep: m[2], arr: m[3] } : { num: 'UO600', dep: 'HKG', arr: 'FUK' };
             };
 
-            const openAddEvent = () => {
-                const title = prompt("標題 (例: ✈️ BX 147 FUK → PUS 或 晚餐)");
-                if(title) {
-                    const time = prompt("時間 (12:00)", "12:00");
-                    const addr = prompt("地址");
-                    trip_days.value[activeDay.value].events.push({ time, title, address: addr });
-                    saveToFirebase();
-                }
+            const addEvent = () => {
+                const t = inputs.value.eventTitle?.trim();
+                if(!t) return;
+                trip_days.value[activeDay.value].events.push({
+                    time: inputs.value.eventTime || '00:00',
+                    title: t,
+                    address: inputs.value.eventAddr || '',
+                    note: inputs.value.eventNote || ''
+                });
+                inputs.value.eventTime = '';
+                inputs.value.eventTitle = '';
+                inputs.value.eventAddr = '';
+                inputs.value.eventNote = '';
+                saveToFirebase();
             };
 
             const deleteEvent = (d, e) => {
@@ -547,9 +581,18 @@
 
             // 記帳邏輯
             const addExpense = () => {
-                if(newExp.value.amount) {
-                    trip_expenses.value.push({...newExp.value});
-                    newExp.value.amount = null; newExp.value.note = ''; saveToFirebase();
+                const amt = Number(inputs.value.expAmount);
+                if(amt && amt > 0) {
+                    trip_expenses.value.push({
+                        amount: amt,
+                        currency: inputs.value.expCurrency,
+                        type: inputs.value.expType,
+                        method: inputs.value.expMethod,
+                        note: inputs.value.expNote || ''
+                    });
+                    inputs.value.expAmount = null;
+                    inputs.value.expNote = '';
+                    saveToFirebase();
                 }
             };
 
@@ -582,21 +625,52 @@
 
             watch(currentTab, (val) => { if(val==='accounting') nextTick(renderChart); });
 
+            // Helpers referenced by template
+            const formatLink = (text) => {
+                if(!text) return '';
+                const urlRegex = /(https?:\/\/[^\s]+)/g;
+                return text.replace(urlRegex, (url) => `<a href="${url}" target="_blank" class="text-sky-600 underline">${url}</a>`);
+            };
+            const getFlightDetail = (title) => {
+                const m = title.match(/([A-Z]{2}\s?\d+)\s(\w{3})\s→\s(\w{3})/);
+                return {
+                    flightNum: m ? m[1] : 'UO600',
+                    depCode: m ? m[2] : 'HKG',
+                    arrCode: m ? m[3] : 'FUK',
+                    depTime: '',
+                    arrTime: ''
+                };
+            };
+            const getCityByDay = (dayIndex) => {
+                // Simple mapping: first 4 days Fukuoka, rest Busan
+                return dayIndex < 4 ? '福岡' : '釜山';
+            };
+            const editItem = () => {};
+            const editEvent = () => {};
+
+            const selectDay = (d) => {
+                // Allow 'prep' or numeric index
+                activeDay.value = d === 'prep' ? 'prep' : Number(d) || 0;
+            };
+
             return {
-                currentTab, activeDay, loading, rates, trip_days, trip_prepList, trip_expenses,
+                currentTab, activeDay, loading, rates,
+                trip_days, trip_prepList, trip_expenses,
+                data, inputs,
                 navTabs: [
                     {id:'itinerary', icon:'calendar_month', label:'行程'},
                     {id:'accounting', icon:'pie_chart', label:'記帳'},
                     {id:'info', icon:'info', label:'資訊'}
                 ],
-                newPrep, newExp, addPrep, saveToFirebase, parseFlight, openAddEvent, deleteEvent,
+                newPrep, newExp, addPrep, saveToFirebase, parseFlight, addEvent, deleteEvent,
                 totalExpenseHKD, addExpense, getExpIcon: (t) => 'restaurant_menu',
                 deleteExpense: (i) => { trip_expenses.value.splice(i,1); saveToFirebase(); },
-                deleteItem: (type, i) => { trip_prepList.value.splice(i,1); saveToFirebase(); }
+                deleteItem: (type, i) => { trip_prepList.value.splice(i,1); saveToFirebase(); },
+                formatLink, getFlightDetail, getCityByDay, editItem, editEvent, selectDay
             }
         }
     }).mount('#app');
 </script>
     
-</rbody>
+</body>
 </html>
