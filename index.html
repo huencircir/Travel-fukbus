@@ -522,12 +522,21 @@
             // 1. 雲端同步：從 Firebase 讀取
             onMounted(() => {
                 db.ref('fuk_bus_data').on('value', (snapshot) => {
-                    const val = snapshot.val();
-                    if (val) {
-                        trip_prepList.value = val.prepList || [];
-                        trip_days.value = val.days || [];
-                        trip_expenses.value = val.expenses || [];
-                        trip_shoppingList.value = val.shoppingList || [];
+                    const val = snapshot.val() || {};
+                    if (Array.isArray(val.prepList)) {
+                        trip_prepList.value = val.prepList;
+                    }
+                    if (Array.isArray(val.days) && val.days.length > 0) {
+                        trip_days.value = val.days;
+                    }
+                    if (Array.isArray(val.expenses)) {
+                        trip_expenses.value = val.expenses;
+                    }
+                    if (Array.isArray(val.shoppingList)) {
+                        trip_shoppingList.value = val.shoppingList;
+                    }
+                    if (typeof activeDay.value === 'number' && activeDay.value >= trip_days.value.length) {
+                        activeDay.value = 0;
                     }
                     loading.value = false;
                 });
@@ -562,6 +571,10 @@
             const addEvent = () => {
                 const t = inputs.value.eventTitle?.trim();
                 if(!t) return;
+                if (typeof activeDay.value !== 'number') return;
+                if (!trip_days.value[activeDay.value]) {
+                    trip_days.value[activeDay.value] = { date: 4 + activeDay.value, events: [] };
+                }
                 trip_days.value[activeDay.value].events.push({
                     time: inputs.value.eventTime || '00:00',
                     title: t,
@@ -605,6 +618,9 @@
                 }, 0).toFixed(0);
             });
 
+            // Alias for template using `expenses`
+            const expenses = computed(() => trip_expenses.value);
+
             // 圖表渲染
             let chart = null;
             const renderChart = () => {
@@ -631,6 +647,10 @@
                 const urlRegex = /(https?:\/\/[^\s]+)/g;
                 return text.replace(urlRegex, (url) => `<a href="${url}" target="_blank" class="text-sky-600 underline">${url}</a>`);
             };
+            const getExpenseIconName = (t) => {
+                const map = { '食': 'restaurant', '交通': 'train', '購物': 'shopping_bag', '住宿': 'hotel', '其他': 'receipt' };
+                return map[t] || 'payments';
+            };
             const getFlightDetail = (title) => {
                 const m = title.match(/([A-Z]{2}\s?\d+)\s(\w{3})\s→\s(\w{3})/);
                 return {
@@ -656,14 +676,14 @@
             return {
                 currentTab, activeDay, loading, rates,
                 trip_days, trip_prepList, trip_expenses,
-                data, inputs,
+                data, inputs, expenses,
                 navTabs: [
                     {id:'itinerary', icon:'calendar_month', label:'行程'},
                     {id:'accounting', icon:'pie_chart', label:'記帳'},
                     {id:'info', icon:'info', label:'資訊'}
                 ],
                 newPrep, newExp, addPrep, saveToFirebase, parseFlight, addEvent, deleteEvent,
-                totalExpenseHKD, addExpense, getExpIcon: (t) => 'restaurant_menu',
+                totalExpenseHKD, addExpense, getExpIcon: (t) => 'restaurant_menu', getExpenseIconName,
                 deleteExpense: (i) => { trip_expenses.value.splice(i,1); saveToFirebase(); },
                 deleteItem: (type, i) => { trip_prepList.value.splice(i,1); saveToFirebase(); },
                 formatLink, getFlightDetail, getCityByDay, editItem, editEvent, selectDay
