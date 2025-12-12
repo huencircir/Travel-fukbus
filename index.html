@@ -482,7 +482,31 @@
             const currentTab = ref('itinerary');
             const activeDay = ref(0);
             const loading = ref(true);
-            const rates = { JPY: '0.052', KRW: '0.0058' };
+            const rates = ref({ JPY: '0.0500', KRW: '0.0058' });
+
+            // const updateRates = async () => {
+            //     try {
+            //         const [jpyRes, krwRes] = await Promise.all([
+            //             fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.xe.com/currencyconverter/convert/?Amount=1&From=JPY&To=HKD')),
+            //             fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.xe.com/currencyconverter/convert/?Amount=1&From=KRW&To=HKD'))
+            //         ]);
+
+            //         const jpyData = await jpyRes.json();
+            //         const krwData = await krwRes.json();
+
+            //         const jpyMatch = jpyData.contents.match(/1 JPY = ([\d.]+) HKD/);
+            //         if (jpyMatch && jpyMatch[1]) {
+            //             rates.value.JPY = parseFloat(jpyMatch[1]).toFixed(4);
+            //         }
+
+            //         const krwMatch = krwData.contents.match(/1 KRW = ([\d.]+) HKD/);
+            //         if (krwMatch && krwMatch[1]) {
+            //             rates.value.KRW = parseFloat(krwMatch[1]).toFixed(4);
+            //         }
+            //     } catch (error) {
+            //         console.error("Could not update exchange rates:", error);
+            //     }
+            // };
 
             // 核心響應式資料
             const trip_prepList = ref([]);
@@ -521,7 +545,8 @@
             const newExp = ref({ amount: null, currency: 'HKD', note: '', type: '食' });
 
             // 1. 雲端同步：從 Firebase 讀取
-            onMounted(() => {
+            onMounted(async () => {
+                //await updateRates();
                 db.ref('fuk_bus_data').on('value', (snapshot) => {
                     const val = snapshot.val() || {};
                     if (Array.isArray(val.prepList)) {
@@ -573,20 +598,49 @@
                 const t = inputs.value.eventTitle?.trim();
                 if(!t) return;
                 if (typeof activeDay.value !== 'number') return;
-                if (!trip_days.value[activeDay.value]) {
-                    trip_days.value[activeDay.value] = { date: 4 + activeDay.value, events: [] };
-                }
-                trip_days.value[activeDay.value].events.push({
+
+                let eventObj = {
                     time: inputs.value.eventTime || '00:00',
                     title: t,
                     address: inputs.value.eventAddr || '',
                     note: inputs.value.eventNote || ''
-                });
+                };
+
+                // Special handling for flights
+                if (t.includes('✈️')) {
+                    const match = t.match(/([\w\s]{2,8})\s*(\w{3})\s*→\s*(\w{3})/);
+                    if (match) {
+                        const [, flightNum, depCode, arrCode] = match;
+                        const arrTimeMatch = eventObj.note.match(/(\d{2}:\d{2})/);
+                        
+                        // The title will be constructed in a standard way for consistency
+                        eventObj.title = `✈️ ${flightNum.trim()} ${depCode.trim()} → ${arrCode.trim()}`;
+                        // The address field for flights is often the airport code
+                        eventObj.address = depCode.trim(); 
+                    }
+                }
+
+                if (!trip_days.value[activeDay.value]) {
+                    trip_days.value[activeDay.value] = { date: 4 + activeDay.value, events: [] };
+                }
+                trip_days.value[activeDay.value].events.push(eventObj);
+                
+                // Reset inputs
                 inputs.value.eventTime = '';
                 inputs.value.eventTitle = '';
                 inputs.value.eventAddr = '';
                 inputs.value.eventNote = '';
                 saveToFirebase();
+            };
+
+            const editFlight = (dIdx, eIdx) => {
+                 const ev = data.value.days[dIdx].events[eIdx];
+                 alert('請修改標題中的航班號/城市代碼 (例: ✈️ UO600 HKG → FUK)，並在備註中修改抵達時間 (例: 11:55 抵達)');
+                 const newTitle = prompt('修改航班標題:', ev.title);
+                 if(newTitle) ev.title = newTitle;
+                 const newNote = prompt('修改備註/抵達時間:', ev.note);
+                 if(newNote !== null) ev.note = newNote;
+                 saveToFirebase();
             };
 
             const deleteEvent = (d, e) => {
@@ -613,8 +667,8 @@
             const totalExpenseHKD = computed(() => {
                 return trip_expenses.value.reduce((sum, item) => {
                     let rate = 1;
-                    if(item.currency === 'JPY') rate = 0.052;
-                    if(item.currency === 'KRW') rate = 0.0058;
+                    if(item.currency === 'JPY') rate = rates.value.JPY;
+                    if(item.currency === 'KRW') rate = rates.value.KRW;
                     return sum + (item.amount * rate);
                 }, 0).toFixed(0);
             });
@@ -653,13 +707,25 @@
                 return map[t] || 'payments';
             };
             const getFlightDetail = (title) => {
-                const m = title.match(/([A-Z]{2}\s?\d+)\s(\w{3})\s→\s(\w{3})/);
+                const match = title.match(/([\w\s]{2,8})\s*(\w{3})\s*→\s*(\w{3})/); 
+                
+                if (!match) return { flightNum: 'N/A', depCode: 'TBA', arrCode: 'TBA', depTime: 'TBA', arrTime: 'TBA' };
+
+                const [fullMatch, flightNum, depCode, arrCode] = match;
+                
+                const currentEvent = data.value.days[activeDay.value]?.events.find(e => e.title === title);
+                
+                const depTime = currentEvent ? currentEvent.time : 'TBA';
+                const note = currentEvent ? currentEvent.note : '';
+                const arrTimeMatch = note ? note.match(/(\d{2}:\d{2}) 抵達/) : null;
+                const arrTime = arrTimeMatch ? arrTimeMatch[1] : 'TBA';
+
                 return {
-                    flightNum: m ? m[1] : 'UO600',
-                    depCode: m ? m[2] : 'HKG',
-                    arrCode: m ? m[3] : 'FUK',
-                    depTime: '',
-                    arrTime: ''
+                    flightNum: flightNum.trim(),
+                    depCode: depCode.trim(),
+                    arrCode: arrCode.trim(),
+                    depTime: depTime,
+                    arrTime: arrTime
                 };
             };
             const allLocations = computed(() => {
@@ -668,16 +734,18 @@
                 locs.push({ title: '釜山酒店', address: 'UH suite 유에이치스위트 더 해운대', dayNum: '5-9', city: '釜山' }); 
 
                 data.value.days.forEach((day, idx) => {
-                    day.events.forEach(ev => {
-                        if (ev.address && ev.address.length > 3 && !['HKG','FUK','PUS','UH suite 유에이치스위트 더 해운대'].includes(ev.address) && !locs.some(l => l.address === ev.address)) {
-                            locs.push({
-                                title: ev.title.replace('✈️', '').trim(),
-                                address: ev.address,
-                                dayNum: idx + 1,
-                                city: getCityByDay(idx)
-                            });
-                        }
-                    });
+                    if (day && Array.isArray(day.events)) {
+                        day.events.forEach(ev => {
+                            if (ev.address && ev.address.length > 3 && !['HKG','FUK','PUS','UH suite 유에이치스위트 더 해운대'].includes(ev.address) && !locs.some(l => l.address === ev.address)) {
+                                locs.push({
+                                    title: ev.title.replace('✈️', '').trim(),
+                                    address: ev.address,
+                                    dayNum: idx + 1,
+                                    city: getCityByDay(idx)
+                                });
+                            }
+                        });
+                    }
                 });
                 return locs;
             });
@@ -692,10 +760,26 @@
                 // Allow 'prep' or numeric index
                 activeDay.value = d === 'prep' ? 'prep' : Number(d) || 0;
             };
-
+             // Shopping List Logic
+            const filteredShopList = computed(() => {
+                if (shopFilter.value === 'all') {
+                    return shoppingList.value;
+                }
+                return shoppingList.value.filter(item => item.category === shopFilter.value);
+            });
+            const shopFilter = ref('all');
+            const shoppingList = ref([
+                { name: '博多明太子', price: '¥1500', category: 'food', note: '', done: false },
+                { name: 'Olive Young 面膜', price: '₩30000', category: 'shop', note: '', done: false },
+                { name: '一蘭拉麵', price: '¥1200', category: 'food', note: '必食', done: true }
+            ]);
+            const mapEmbedSrc = ref('https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d209121.78508103348!2d130.26442436034098!3d33.64964177218671!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x354191c7e6f9b3e5%3A0x1c48011116c2763!2sFukuoka%2C%20Fukuoka%20Prefecture%2C%20Japan!5e0!3m2!1sen!2stw!4v1700000000000!5m2!1sen!2stw');
+            const updateMap = (address) => {
+                mapEmbedSrc.value = `https://maps.google.com/maps?q=${encodeURIComponent(address)}&t=&z=15&ie=UTF8&iwloc=&output=embed`;
+            };
             return {
                 currentTab, activeDay, loading, rates,
-                trip_days, trip_prepList, trip_expenses,
+                allLocations, trip_days, trip_prepList, trip_expenses,
                 data, inputs, expenses,
                 navTabs: [
                     { id: 'itinerary', label: '行程', icon: 'calendar_month' },
@@ -705,10 +789,18 @@
                     { id: 'info', label: '資訊', icon: 'info' }
                 ],
                 newPrep, newExp, addPrep, saveToFirebase, parseFlight, addEvent, deleteEvent,
-                totalExpenseHKD, addExpense, getExpIcon: (t) => 'restaurant_menu', getExpenseIconName,
+                totalExpenseHKD, addExpense, updateMap,
+                getExpIcon: (t) => 'restaurant_menu', getExpenseIconName,
                 deleteExpense: (i) => { trip_expenses.value.splice(i,1); saveToFirebase(); },
                 deleteItem: (type, i) => { trip_prepList.value.splice(i,1); saveToFirebase(); },
-                formatLink, getFlightDetail, getCityByDay, editItem, editEvent, selectDay
+                formatLink, getFlightDetail, getCityByDay, editItem, editEvent, selectDay, shoppingList,
+                // Shopping List additions
+                shopFilter, filteredShopList, addShopItem: () => { if(inputs.value.shopName) { shoppingList.value.push({ name: inputs.value.shopName, price: inputs.value.shopPrice, category: inputs.value.shopCat, note: inputs.value.shopNote, done: false }); inputs.value.shopName = ''; inputs.value.shopPrice = ''; inputs.value.shopNote = ''; } },
+                deleteShopItem: (item) => { const i = shoppingList.value.indexOf(item); if(i > -1 && confirm('確定刪除此清單項目？')) shoppingList.value.splice(i,1); },
+                toggleShopDone: (item) => item.done = !item.done,
+                editItem: (type, idx) => { const newVal = prompt('修改:', data.value.prepList[idx].text); if(newVal) data.value.prepList[idx].text = newVal; },
+                // Flight edit
+                editFlight
             }
         }
     }).mount('#app');
