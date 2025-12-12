@@ -464,13 +464,14 @@
 
     // Firebase Config (已帶入你的資料)
     const firebaseConfig = {
-        apiKey: "AIzaSyByfU_CjVjWrH4n8DysBRGUK1LHs7BuK5E",
-        authDomain: "fuk-bus-trip-6e899.firebaseapp.com",
-        projectId: "fuk-bus-trip-6e899",
-        storageBucket: "fuk-bus-trip-6e899.firebasestorage.app",
-        messagingSenderId: "699378034250",
-        appId: "1:699378034250:web:92ae7dbcf32f131d4ce8b3",
-        measurementId: "G-1KRV5TL03M"
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_AUTH_DOMAIN",
+      projectId: "fuk-bus-trip-6e899",
+      databaseURL: "https://fuk-bus-trip-6e899-default-rtdb.asia-southeast1.firebasedatabase.app/", // <-- REPLACE WITH YOUR ACTUAL URL
+      storageBucket: "YOUR_STORAGE_BUCKET",
+      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+      appId: "YOUR_APP_ID",
+      measurementId: "YOUR_MEASUREMENT_ID"
     };
 
     firebase.initializeApp(firebaseConfig);
@@ -661,6 +662,25 @@
                     arrTime: ''
                 };
             };
+            const allLocations = computed(() => {
+                const locs = [];
+                locs.push({ title: '福岡酒店', address: 'Richmond Hotel Fukuoka Tenjin', dayNum: '1-4', city: '福岡' });
+                locs.push({ title: '釜山酒店', address: 'UH suite 유에이치스위트 더 해운대', dayNum: '5-9', city: '釜山' }); 
+
+                data.value.days.forEach((day, idx) => {
+                    day.events.forEach(ev => {
+                        if (ev.address && ev.address.length > 3 && !['HKG','FUK','PUS','UH suite 유에이치스위트 더 해운대'].includes(ev.address) && !locs.some(l => l.address === ev.address)) {
+                            locs.push({
+                                title: ev.title.replace('✈️', '').trim(),
+                                address: ev.address,
+                                dayNum: idx + 1,
+                                city: getCityByDay(idx)
+                            });
+                        }
+                    });
+                });
+                return locs;
+            });
             const getCityByDay = (dayIndex) => {
                 // Simple mapping: first 4 days Fukuoka, rest Busan
                 return dayIndex < 4 ? '福岡' : '釜山';
@@ -678,9 +698,11 @@
                 trip_days, trip_prepList, trip_expenses,
                 data, inputs, expenses,
                 navTabs: [
-                    {id:'itinerary', icon:'calendar_month', label:'行程'},
-                    {id:'accounting', icon:'pie_chart', label:'記帳'},
-                    {id:'info', icon:'info', label:'資訊'}
+                    { id: 'itinerary', label: '行程', icon: 'calendar_month' },
+                    { id: 'map', label: '地圖', icon: 'map' },
+                    { id: 'accounting', label: '記帳', icon: 'pie_chart' },
+                    { id: 'shopping', label: '清單', icon: 'shopping_bag' },
+                    { id: 'info', label: '資訊', icon: 'info' }
                 ],
                 newPrep, newExp, addPrep, saveToFirebase, parseFlight, addEvent, deleteEvent,
                 totalExpenseHKD, addExpense, getExpIcon: (t) => 'restaurant_menu', getExpenseIconName,
