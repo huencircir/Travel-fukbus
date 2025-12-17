@@ -18,7 +18,7 @@ const db = firebase.database();
 createApp({
     setup() {
         const currentTab = ref('itinerary');
-        const activeDay = ref(0);
+        const activeDay = ref('prep'); // Default to 'prep'
         const loading = ref(true);
         const rates = ref({ JPY: '0.0500', KRW: '0.0058' });
 
@@ -79,7 +79,9 @@ createApp({
             shopPrice: '',
             shopCat: 'food',
             shopNote: '',
-            shopCurrency: 'JPY'
+            shopCurrency: 'JPY',
+            shopMap: '',
+            shopDate: ''
         });
 
         // UI 狀態
@@ -118,6 +120,54 @@ createApp({
                 expenses: trip_expenses.value,
                 shoppingList: trip_shoppingList.value
             });
+        };
+
+        const syncShopItemToEvent = (item, oldDate = null) => {
+            // First, remove any existing event linked to this item
+            if (oldDate) {
+                const oldDayIndex = trip_days.value.findIndex(d => d.date == oldDate);
+                if (oldDayIndex !== -1) {
+                    const events = trip_days.value[oldDayIndex].events;
+                    const eventIndex = events.findIndex(e => e.shopItemId === item.id);
+                    if (eventIndex > -1) {
+                        events.splice(eventIndex, 1);
+                    }
+                }
+            }
+
+            // Now, add a new event if a date is set
+            if (item.date) {
+                const dayIndex = trip_days.value.findIndex(d => d.date == item.date);
+                if (dayIndex !== -1) {
+                    // Ensure events array exists
+                    if (!trip_days.value[dayIndex].events) {
+                        trip_days.value[dayIndex].events = [];
+                    }
+                    // Avoid adding duplicates
+                    const existingEventIndex = trip_days.value[dayIndex].events.findIndex(e => e.shopItemId === item.id);
+                    if (existingEventIndex === -1) {
+                         trip_days.value[dayIndex].events.push({
+                            time: '12:00', // Default time for shopping events
+                            title: `🛍️ ${item.name}`,
+                            address: item.map || '',
+                            note: item.note || '',
+                            shopItemId: item.id // Link to the shopping item
+                        });
+                    }
+                }
+            }
+        };
+
+        const removeShopItemFromEvent = (item) => {
+            if (!item.date) return;
+            const dayIndex = trip_days.value.findIndex(d => d.date == item.date);
+            if (dayIndex !== -1) {
+                const events = trip_days.value[dayIndex].events;
+                const eventIndex = events.findIndex(e => e.shopItemId === item.id);
+                if (eventIndex > -1) {
+                    events.splice(eventIndex, 1);
+                }
+            }
         };
 
         // 行程邏輯
@@ -215,16 +265,44 @@ createApp({
              saveToFirebase();
         };
 
-        const deleteEvent = (dayIndex, eventToDelete) => {
+        const deleteEvent = (dayIndex, eventIndex) => {
             if (confirm('刪？')) {
-                const events = trip_days.value[dayIndex].events;
-                const indexToDelete = events.findIndex(event => 
-                    event.time === eventToDelete.time && event.title === eventToDelete.title
+                // Get the correct event from the sorted list
+                const eventToDelete = sortedEvents.value[eventIndex];
+                if (!eventToDelete) {
+                    console.error("Cannot find event to delete.");
+                    return;
+                }
+
+                // If the event is linked to a shopping item, find that item and clear its date.
+                if (eventToDelete.shopItemId) {
+                    const shopItem = trip_shoppingList.value.find(item => item.id === eventToDelete.shopItemId);
+                    if (shopItem) {
+                        shopItem.date = ''; // Unlink by clearing the date
+                    }
+                }
+
+                // Now, find the event's true index in the original, unsorted array and remove it.
+                const originalEvents = trip_days.value[dayIndex].events;
+                const indexInOriginalArray = originalEvents.findIndex(event => 
+                    // Find by unique ID if it exists
+                    (event.shopItemId && event.shopItemId === eventToDelete.shopItemId) ||
+                    // Otherwise, find by a combination of properties
+                    (event.time === eventToDelete.time && event.title === eventToDelete.title && event.address === eventToDelete.address)
                 );
                 
-                if (indexToDelete !== -1) {
-                    events.splice(indexToDelete, 1);
+                if (indexInOriginalArray !== -1) {
+                    originalEvents.splice(indexInOriginalArray, 1);
                     saveToFirebase();
+                } else {
+                    // As a fallback, try a less strict search. This should rarely be needed.
+                    const fallbackIndex = originalEvents.indexOf(eventToDelete);
+                    if (fallbackIndex > -1) {
+                        originalEvents.splice(fallbackIndex, 1);
+                        saveToFirebase();
+                    } else {
+                        alert('無法刪除該項目，請刷新後再試。');
+                    }
                 }
             }
         };
@@ -289,6 +367,15 @@ createApp({
             return map[t] || 'payments';
         };
 
+        const getMapSearchUrl = (event) => {
+            // Prioritize address if it's specific. Otherwise, use the event title.
+            // A simple heuristic: if address is more than just a city name, it's likely specific.
+            const query = (event.address && event.address.length > 5) 
+                ? event.address 
+                : event.title.replace('✈️', '').replace('🛍️', '').trim();
+            return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+        };
+
         const getFlightDetail = (title) => {
             const match = title.match(/([\w\s]{2,8})\s*(\w{3})\s*→\s*(\w{3})/); 
             
@@ -350,6 +437,13 @@ createApp({
             return dayIndex < 4 ? '福岡' : '釜山';
         };
         
+        const getDayOfWeek = (date) => {
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            // January 4, 2026 is a Sunday. Date '4' corresponds to index 0 (Sunday).
+            const dayIndex = (date - 4) % 7;
+            return dayNames[dayIndex];
+        };
+
         const editPrepItem = (index) => {
             editingPrepItem.value = { ...trip_prepList.value[index], originalIndex: index };
         };
@@ -456,10 +550,10 @@ createApp({
             ],
             newPrep, newExp, addPrep, saveToFirebase, parseFlight, addEvent, deleteEvent,
             totalExpenseHKD, addExpense, updateMap,
-            getExpIcon: (t) => 'restaurant_menu', getExpenseIconName,
+            getExpIcon: (t) => 'restaurant_menu', getExpenseIconName, getMapSearchUrl,
             deleteExpense: (i) => { trip_expenses.value.splice(i,1); saveToFirebase(); },
             deleteItem: (type, i) => { trip_prepList.value.splice(i,1); saveToFirebase(); },
-            formatLink, getFlightDetail, getCityByDay, editEvent, selectDay,
+            formatLink, getFlightDetail, getCityByDay, getDayOfWeek, editEvent, selectDay,
             sortedEvents,
             // Prep List edit
             editingPrepItem, editPrepItem, savePrepItem, cancelEditPrep,
@@ -468,31 +562,46 @@ createApp({
             filteredShopList,
             addShopItem: () => {
                 if(inputs.value.shopName) {
-                    trip_shoppingList.value.push({
+                    const newItem = {
                         id: Date.now(), // Unique ID for the item
                         name: inputs.value.shopName,
                         price: inputs.value.shopPrice || 0,
                         currency: inputs.value.shopCurrency,
                         category: inputs.value.shopCat,
                         note: inputs.value.shopNote,
+                        map: inputs.value.shopMap,
+                        date: inputs.value.shopDate,
                         done: false
-                    });
+                    };
+                    trip_shoppingList.value.push(newItem);
+
+                    // Sync with events if date is present
+                    if (newItem.date) {
+                        syncShopItemToEvent(newItem);
+                    }
+
                     inputs.value.shopName = '';
                     inputs.value.shopPrice = '';
                     inputs.value.shopNote = '';
+                    inputs.value.shopMap = '';
+                    inputs.value.shopDate = '';
                     saveToFirebase();
                 }
             },
             editShopItem: (item) => {
-                // Store old values for finding the expense later if needed
+                // Store old values for finding the expense and event later
                 const oldPrice = item.price;
                 const oldName = item.name;
                 const oldCurrency = item.currency;
+                const oldDate = item.date;
 
                 const newName = prompt('修改項目名稱:', item.name);
                 const newPrice = prompt('修改項目價格:', item.price);
                 const newCurrency = prompt('修改貨幣 (HKD, JPY, KRW):', item.currency);
                 const newNote = prompt('修改備註:', item.note);
+                const newMap = prompt('修改地圖/地址:', item.map || '');
+                const newDate = prompt('修改日期 (e.g., 4-12):', item.date || '');
+
 
                 // Find the expense item *before* updating the shopping item
                 let expenseIndex = -1;
@@ -508,9 +617,14 @@ createApp({
 
                 // Update shopping item
                 if (newName) item.name = newName;
-                if (newPrice) item.price = Number(newPrice);
+                if (newPrice !== null) item.price = Number(newPrice);
                 if (newCurrency) item.currency = newCurrency.toUpperCase();
                 if (newNote !== null) item.note = newNote;
+                if (newMap !== null) item.map = newMap;
+                if (newDate !== null) item.date = newDate;
+
+                // Sync with events
+                syncShopItemToEvent(item, oldDate);
 
                 // If it was done, update the corresponding expense item
                 if (item.done && expenseIndex > -1) {
@@ -525,7 +639,10 @@ createApp({
             deleteShopItem: (item) => {
                 const i = trip_shoppingList.value.indexOf(item);
                 if (i > -1 && confirm('確定刪除此清單項目？')) {
-                    // If the item was done, remove its corresponding expense first
+                    // Remove from events first
+                    removeShopItemFromEvent(item);
+
+                    // If the item was done, remove its corresponding expense
                     if (item.done) {
                         const expenseNote = `[清單] ${item.name}`;
                         const expenseIndex = trip_expenses.value.findIndex(exp =>

@@ -122,10 +122,10 @@
 
                     <button v-for="(day, index) in data.days" :key="index" 
                             @click="selectDay(index)"
-                            class="snap-center flex-shrink-0 px-4 py-2 rounded-2xl transition-all duration-300 flex flex-col items-center justify-center min-w-[70px]"
+                            class="snap-center flex-shrink-0 px-4 py-3 rounded-2xl transition-all duration-300 flex flex-col items-center justify-center min-w-[75px]"
                             :class="activeDay === index ? 'bg-deep-600 text-white shadow-lg' : 'bg-white text-gray-400 shadow-lg'">
-                        <span class="text-[10px] uppercase opacity-80">Jan</span>
-                        <span class="text-lg font-black leading-none my-0.5">{{ day.date }}</span>
+                        <span class="text-[10px] font-bold uppercase">{{ getDayOfWeek(day.date) }}</span>
+                        <span class="text-xl font-black leading-none my-0.5">{{ day.date }}</span>
                         <span class="text-[10px] font-bold">D{{ index + 1 }}</span>
                     </button>
                 </div>
@@ -239,7 +239,7 @@
                                         <div v-if="event.note" class="mt-2 text-xs bg-gray-50 p-2 rounded-lg text-gray-600 break-all" v-html="formatLink(event.note)"></div>
                                     </div>
                                     <div class="flex flex-col gap-2 ml-2">
-                                        <a v-if="event.address" :href="'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(event.address)" target="_blank" class="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center text-sky-600 hover:bg-sky-200">
+                                        <a v-if="event.address || event.title" :href="getMapSearchUrl(event)" target="_blank" class="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center text-sky-600 hover:bg-sky-200">
                                             <span class="material-icons text-sm">near_me</span>
                                         </a>
                                         <button @click="deleteEvent(activeDay, eIdx)" class="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center text-gray-300 hover:text-red-400 hover:bg-red-50">
@@ -406,6 +406,13 @@
                     </select>
                     <input v-model="inputs.shopNote" placeholder="備註 / 網址" class="flex-1 bg-gray-50 rounded-xl p-3 text-sm border-none focus:ring-2 focus:ring-sky-200">
                 </div>
+                <div class="flex gap-2">
+                    <input v-model="inputs.shopMap" placeholder="地圖/地址" class="flex-1 bg-gray-50 rounded-xl p-3 text-sm border-none focus:ring-2 focus:ring-sky-200">
+                    <select v-model="inputs.shopDate" class="bg-gray-50 rounded-xl p-3 text-sm border-none text-gray-600">
+                        <option value="">預計日期</option>
+                        <option v-for="(day, index) in data.days" :value="day.date">{{ day.date }}日 (D{{ index + 1 }})</option>
+                    </select>
+                </div>
                 <button @click="addShopItem" class="w-full bg-deep-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-sky-200 hover:scale-105 transition">加入清單</button>
             </div>
 
@@ -421,7 +428,15 @@
                             <h4 class="font-bold text-sm text-slate-800" :class="{'line-through text-gray-400': item.done}" @click="editShopItem(item)">{{ item.name }}</h4>
                         </div>
                         <p class="text-sm font-bold text-sky-600 mb-1">{{ item.price }} <span class="text-xs text-gray-500">{{ item.currency }}</span></p>
-                        <p v-if="item.note" class="text-xs text-gray-500 bg-gray-50 p-2 rounded break-all" v-html="formatLink(item.note)"></p>
+                        <p v-if="item.map" class="text-xs text-gray-500 mt-1 flex items-center">
+                            <span class="material-icons text-[10px] mr-1 text-sky-500">place</span>
+                            {{ item.map }}
+                        </p>
+                        <p v-if="item.date" class="text-xs text-gray-500 mt-1 flex items-center">
+                            <span class="material-icons text-[10px] mr-1 text-sky-500">calendar_today</span>
+                            1月 {{ item.date }}日
+                        </p>
+                        <p v-if="item.note" class="text-xs text-gray-500 bg-gray-50 p-2 rounded break-all mt-2" v-html="formatLink(item.note)"></p>
                     </div>
                     
                     <button @click="deleteShopItem(item)" class="text-gray-300 hover:text-red-400 shrink-0"><span class="material-icons text-sm">delete</span></button>
@@ -481,7 +496,7 @@
     </nav>
 
 </div>
-<script src="index.js" defer></script>
+<script src="index.js?t=1734403200003" defer></script>
     
 </body>
 </html>
