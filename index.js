@@ -24,7 +24,7 @@ createApp({
 
         const updateRates = async () => {
             try {
-                const response = await fetch('https://api.freecurrencyapi.com/v1/latest?apikey=fca_live_ixkKtugD3UZDL94ctZnDM43eMxnimNNckEwpYKD7&base_currency=USD');
+                const response = await fetch('https://api.freecurrencyapi.com/v1/latest?apikey=fca_live_ixkKtugD3UZDL94ctZnDM43eMxnimNNckEwpYKD7&base_currency=HKD');
                 const data = await response.json();
                 
                 if (data.data && data.data.HKD && data.data.JPY && data.data.KRW) {
