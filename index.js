@@ -53,6 +53,7 @@ createApp({
         const trip_shoppingList = ref([]);
         const editingPrepItem = ref(null);
         const weatherForecast = ref({ icon: 'wb_sunny', text: '晴' });
+        const editingEvent = ref(null);
 
         // Bridge for template bindings expecting `data.*` and `inputs.*`
         const data = computed(() => ({
@@ -123,35 +124,46 @@ createApp({
         };
 
         const syncShopItemToEvent = (item, oldDate = null) => {
-            // First, remove any existing event linked to this item
+            let existingEvent = null;
+            // First, find and remove any existing event linked to this item from its old date
             if (oldDate) {
                 const oldDayIndex = trip_days.value.findIndex(d => d.date == oldDate);
                 if (oldDayIndex !== -1) {
                     const events = trip_days.value[oldDayIndex].events;
                     const eventIndex = events.findIndex(e => e.shopItemId === item.id);
                     if (eventIndex > -1) {
+                        // Preserve the existing event details before removing it
+                        existingEvent = events[eventIndex];
                         events.splice(eventIndex, 1);
                     }
                 }
             }
 
-            // Now, add a new event if a date is set
+            // Now, add or update the event if a date is set
             if (item.date) {
                 const dayIndex = trip_days.value.findIndex(d => d.date == item.date);
                 if (dayIndex !== -1) {
-                    // Ensure events array exists
                     if (!trip_days.value[dayIndex].events) {
                         trip_days.value[dayIndex].events = [];
                     }
-                    // Avoid adding duplicates
-                    const existingEventIndex = trip_days.value[dayIndex].events.findIndex(e => e.shopItemId === item.id);
-                    if (existingEventIndex === -1) {
-                         trip_days.value[dayIndex].events.push({
-                            time: '12:00', // Default time for shopping events
+                    
+                    // Check if an event for this item already exists on the new date
+                    const eventOnNewDate = trip_days.value[dayIndex].events.find(e => e.shopItemId === item.id);
+
+                    if (eventOnNewDate) {
+                        // If it already exists on the new date (e.g., just editing name), update it
+                        eventOnNewDate.title = `🛍️ ${item.name}`;
+                        eventOnNewDate.address = item.map || '';
+                        // Note is tricky: we might want a separate event note. Let's keep it simple for now.
+                        // eventOnNewDate.note = item.note || '';
+                    } else {
+                        // If it's a new event or moved from another date, create it
+                        trip_days.value[dayIndex].events.push({
+                            time: existingEvent?.time || '12:00', // Preserve old time if it exists
                             title: `🛍️ ${item.name}`,
                             address: item.map || '',
-                            note: item.note || '',
-                            shopItemId: item.id // Link to the shopping item
+                            note: existingEvent?.note || '', // Preserve old note
+                            shopItemId: item.id
                         });
                     }
                 }
@@ -518,7 +530,57 @@ createApp({
             });
         });
 
-        const editEvent = () => {};
+        const saveEvent = () => {
+            if (!editingEvent.value) return;
+
+            const { originalDayIndex, originalShopItemId, ...updatedEventData } = editingEvent.value;
+            
+            // Find the original event in the source array to update it
+            const originalEvent = trip_days.value[originalDayIndex].events.find(e => 
+                (e.shopItemId && e.shopItemId === originalShopItemId) || // Best way to find
+                (e.id && e.id === updatedEventData.id) // Fallback for non-shop items
+            );
+
+            if (originalEvent) {
+                originalEvent.time = updatedEventData.time;
+                originalEvent.title = updatedEventData.title;
+                originalEvent.address = updatedEventData.address;
+                originalEvent.note = updatedEventData.note;
+
+                // If it's a linked shopping item, update the shopping list as well
+                if (originalEvent.shopItemId) {
+                    const shopItem = trip_shoppingList.value.find(item => item.id === originalEvent.shopItemId);
+                    if (shopItem) {
+                        // Sync back the name and map/address
+                        shopItem.name = originalEvent.title.replace('🛍️', '').trim();
+                        shopItem.map = originalEvent.address;
+                    }
+                }
+            }
+
+            saveToFirebase();
+            editingEvent.value = null; // Exit editing mode
+        };
+
+        const cancelEditEvent = () => {
+            editingEvent.value = null;
+        };
+
+        const editEvent = (dayIndex, eventIndex) => {
+            const eventToEdit = sortedEvents.value[eventIndex];
+            if (!eventToEdit) return;
+
+            // To ensure we have a unique ID for non-shopping items, let's add one if it's missing.
+            if (!eventToEdit.id) {
+                eventToEdit.id = `evt_${Date.now()}_${Math.random()}`;
+            }
+
+            editingEvent.value = {
+                ...eventToEdit,
+                originalDayIndex: dayIndex,
+                originalShopItemId: eventToEdit.shopItemId // Store the original ID for finding it later
+            };
+        };
 
         const selectDay = (d) => {
             // Allow 'prep' or numeric index
@@ -563,7 +625,7 @@ createApp({
             addShopItem: () => {
                 if(inputs.value.shopName) {
                     const newItem = {
-                        id: Date.now(), // Unique ID for the item
+                        id: `shop_${Date.now()}`, // Unique ID for the item
                         name: inputs.value.shopName,
                         price: inputs.value.shopPrice || 0,
                         currency: inputs.value.shopCurrency,
@@ -689,7 +751,9 @@ createApp({
             },
             editItem: (type, idx) => { const newVal = prompt('修改:', data.value.prepList[idx].text); if(newVal) data.value.prepList[idx].text = newVal; },
             // Flight edit
-            editFlight
+            editFlight,
+            // Event Edit
+            editingEvent, saveEvent, cancelEditEvent
         }
     }
 }).mount('#app');
