@@ -22,29 +22,27 @@ createApp({
         const loading = ref(true);
         const rates = ref({ JPY: '0.0500', KRW: '0.0058' });
 
-        // const updateRates = async () => {
-        //     try {
-        //         const [jpyRes, krwRes] = await Promise.all([
-        //             fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.xe.com/currencyconverter/convert/?Amount=1&From=JPY&To=HKD')),
-        //             fetch('https://api.allorigins.win/get?url=' + encodeURIComponent('https://www.xe.com/currencyconverter/convert/?Amount=1&From=KRW&To=HKD'))
-        //         ]);
+        const updateRates = async () => {
+            try {
+                const response = await fetch('https://api.freecurrencyapi.com/v1/latest?apikey=fca_live_ixkKtugD3UZDL94ctZnDM43eMxnimNNckEwpYKD7&base_currency=USD');
+                const data = await response.json();
+                
+                if (data.data && data.data.HKD && data.data.JPY && data.data.KRW) {
+                    const hkdPerUsd = data.data.HKD;
+                    const jpyPerUsd = data.data.JPY;
+                    const krwPerUsd = data.data.KRW;
 
-        //         const jpyData = await jpyRes.json();
-        //         const krwData = await krwRes.json();
-
-        //         const jpyMatch = jpyData.contents.match(/1 JPY = ([\d.]+) HKD/);
-        //         if (jpyMatch && jpyMatch[1]) {
-        //             rates.value.JPY = parseFloat(jpyMatch[1]).toFixed(4);
-        //         }
-
-        //         const krwMatch = krwData.contents.match(/1 KRW = ([\d.]+) HKD/);
-        //         if (krwMatch && krwMatch[1]) {
-        //             rates.value.KRW = parseFloat(krwMatch[1]).toFixed(4);
-        //         }
-        //     } catch (error) {
-        //         console.error("Could not update exchange rates:", error);
-        //     }
-        // };
+                    // To find how many HKD 1 JPY is worth: (HKD/USD) / (JPY/USD) = HKD/JPY
+                    rates.value.JPY = (hkdPerUsd / jpyPerUsd).toFixed(4);
+                    
+                    // To find how many HKD 1 KRW is worth: (HKD/USD) / (KRW/USD) = HKD/KRW
+                    rates.value.KRW = (hkdPerUsd / krwPerUsd).toFixed(4);
+                }
+            } catch (error) {
+                console.error("Could not update exchange rates:", error);
+                // Fallback to default rates if API fails
+            }
+        };
 
         // 核心響應式資料
         const trip_prepList = ref([]);
@@ -91,7 +89,7 @@ createApp({
 
         // 1. 雲端同步：從 Firebase 讀取
         onMounted(async () => {
-            //await updateRates();
+            await updateRates();
             db.ref('fuk_bus_data').on('value', (snapshot) => {
                 const val = snapshot.val() || {};
                 if (Array.isArray(val.prepList)) {
